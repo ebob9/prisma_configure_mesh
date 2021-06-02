@@ -1,0 +1,3 @@
+SCRIPT_VERSION = "1.0.0"
+SCRIPT_NAME = 'Prisma SD-WAN Mesh Configuration'
+MODIFY_RETRY_COUNT = 10
