@@ -4,8 +4,8 @@ with open('README.md') as f:
     long_description = f.read()
 
 setup(name='prisma_configure_mesh',
-      version='1.0.0b1',
-      description='Utility for changing from Hub/Spoke to Partial or Full Mesh for Prisma SD-WAN.',
+      version='1.1.0b1',
+      description='Utility for changing from Hub/Spoke to Regional, Full, or Custom Mesh for Prisma SD-WAN.',
       long_description=long_description,
       long_description_content_type='text/markdown',
       url='https://github.com/ebob9/prisma_configure_mesh',
@@ -13,7 +13,7 @@ setup(name='prisma_configure_mesh',
       author_email='prisma_configure_mesh@ebob9.com',
       license='MIT',
       install_requires=[
-            'cloudgenix >= 5.5.1b2',
+            'cloudgenix >= 6.2.1b1',
             'progressbar2 >= 3.53.1'
       ],
       packages=['prisma_mesh_functions'],
