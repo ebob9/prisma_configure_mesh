@@ -430,6 +430,183 @@ def create_anynets_menu_both(new_anynets_pub, new_anynets_priv, sdk_vars, sdk_se
     return do_we_go
 
 
+def apply_regional_mesh(regional_mesh_dict, sdk_vars, sdk_session):
+
+    new_anynets_pub = {}
+    new_anynets_priv = {}
+    remove_anynets_pub = {}
+    remove_anynets_priv = {}
+
+    for domain, domain_dict in regional_mesh_dict.items():
+        if domain_dict["current_mode"] == domain_dict["pending_mode"]:
+            # no changes here, skip..
+            continue
+        if domain_dict["pending_mode"] == "Full Mesh":
+            # we need to create the creatable anynets
+            new_anynets_pub.update(domain_dict.get("new_anynets_pub", {}))
+            new_anynets_priv.update(domain_dict.get("new_anynets_priv", {}))
+        elif domain_dict["pending_mode"] == "Hub/Spoke":
+            # if hub/spoke we need to remove all optional anynets
+            remove_anynets_pub.update(domain_dict.get("current_anynets_pub", {}))
+            remove_anynets_priv.update(domain_dict.get("current_anynets_priv", {}))
+
+
+    num_new_anynets_pub = len(list(new_anynets_pub.keys()))
+    num_new_anynets_priv = len(list(new_anynets_priv.keys()))
+    num_remove_anynets_pub = len(list(remove_anynets_pub.keys()))
+    num_remove_anynets_priv = len(list(remove_anynets_priv.keys()))
+    num_new_anynets = num_new_anynets_pub + num_new_anynets_priv
+    num_remove_anynets = num_remove_anynets_pub + num_remove_anynets_priv
+    num_anynet_changes = num_new_anynets + num_remove_anynets
+
+    if num_anynet_changes == 0:
+        print("No pending Prisma SD-WAN Regional Mesh changes to apply. Exiting.")
+        sys.exit()
+
+    quick_confirm_string = f"\nPending Prisma SD-WAN Regional Mesh changes will:\n"
+    if num_new_anynets_pub > 0:
+        quick_confirm_string += f"    Create {num_new_anynets_pub} NEW Public WAN Branch-Branch VPN Mesh Links\n"
+    if num_new_anynets_priv > 0:
+        quick_confirm_string += f"    Create {num_new_anynets_priv} NEW Private WAN Branch-Branch VPN Mesh Links\n"
+    if num_remove_anynets_pub > 0:
+        quick_confirm_string += f"    Remove {num_remove_anynets_pub} EXISTING Public WAN Branch-Branch VPN Mesh Links\n"
+    if num_remove_anynets_priv > 0:
+        quick_confirm_string += f"    Remove {num_remove_anynets_priv} EXISTING Private WAN Branch-Branch VPN Mesh Links\n"
+    quick_confirm_string += f"\n"
+    quick_confirm_string += f"Are you sure? "
+
+    # quick confirm
+    do_we_go = menus.quick_confirm(quick_confirm_string, 'N')
+
+    if do_we_go in ['y']:
+        print(f"\nDeploying {num_new_anynets} new and removing {num_remove_anynets} existing Branch-Branch VPN Mesh Links..")
+
+        counter = 1
+        pbar = ProgressBar(widgets=[Percentage(), Bar(), ETA()], max_value=num_anynet_changes+1).start()
+
+        for anynet_uniqueid, anynet in new_anynets_pub.items():
+
+            status = False
+            rest_call_retry = 0
+
+            while not status:
+                status, create_result = create_anynet_link(anynet['source_site_id'], anynet['source_wan_if_id'],
+                                                           anynet['target_site_id'], anynet['target_wan_if_id'],
+                                                           forced=True, admin_state=True, sdk_vars=sdk_vars,
+                                                           sdk_session=sdk_session)
+
+                if not status:
+                    print("API request to create Mesh VPN Link {0}({1}) <-> {2}({3})) failed/timed out. Retrying."
+                          "".format(anynet['source_site_id'], anynet['source_wan_if_id'],
+                                    anynet['target_site_id'], anynet['target_wan_if_id']))
+                    rest_call_retry += 1
+                    # have we hit retry limit?
+                    if rest_call_retry >= MODIFY_RETRY_COUNT:
+                        # Bail out
+                        print("ERROR: Could not create Mesh VPN Link {0}({1}) <-> {2}({3})). Continuing."
+                              "".format(anynet['source_site_id'], anynet['source_wan_if_id'],
+                                        anynet['target_site_id'], anynet['target_wan_if_id']))
+                        status = True
+                        create_result = False
+                    else:
+                        # wait and keep going.
+                        time.sleep(1)
+
+            counter += 1
+            pbar.update(counter)
+
+        for anynet_uniqueid, anynet in new_anynets_priv.items():
+
+            status = False
+            rest_call_retry = 0
+
+            while not status:
+                status, create_result = create_anynet_link(anynet['source_site_id'], anynet['source_wan_if_id'],
+                                                           anynet['target_site_id'], anynet['target_wan_if_id'],
+                                                           forced=True, admin_state=True, sdk_vars=sdk_vars,
+                                                           sdk_session=sdk_session)
+
+                if not status:
+                    print("API request to create Mesh VPN Link {0}({1}) <-> {2}({3})) failed/timed out. Retrying."
+                          "".format(anynet['source_site_id'], anynet['source_wan_if_id'],
+                                    anynet['target_site_id'], anynet['target_wan_if_id']))
+                    rest_call_retry += 1
+                    # have we hit retry limit?
+                    if rest_call_retry >= MODIFY_RETRY_COUNT:
+                        # Bail out
+                        print("ERROR: Could not create Mesh VPN Link {0}({1}) <-> {2}({3})). Continuing."
+                              "".format(anynet['source_site_id'], anynet['source_wan_if_id'],
+                                        anynet['target_site_id'], anynet['target_wan_if_id']))
+                        status = True
+                        create_result = False
+                    else:
+                        # wait and keep going.
+                        time.sleep(1)
+
+            counter += 1
+            pbar.update(counter)
+
+        for anynet_uniqueid, anynet in remove_anynets_pub.items():
+
+            status = False
+            rest_call_retry = 0
+
+            while not status:
+                status, disable_result = delete_anynet_link(anynet['path_id'], sdk_vars=sdk_vars,
+                                                            sdk_session=sdk_session)
+
+                if not status:
+                    print("API request to disable Mesh VPN Link {0} failed/timed out. Retrying."\
+                        .format(anynet['path_id']))
+                    rest_call_retry += 1
+                    if rest_call_retry >= MODIFY_RETRY_COUNT:
+                        # Bail out
+                        print("ERROR: Could not disable Mesh VPN Link {0}. Continuing.".format(anynet['path_id']))
+                        status = True
+                        disable_result = False
+                    else:
+                        # wait and keep going.
+                        time.sleep(1)
+            counter += 1
+            pbar.update(counter)
+
+        for anynet_uniqueid, anynet in remove_anynets_priv.items():
+
+            status = False
+            rest_call_retry = 0
+
+            while not status:
+                status, disable_result = delete_anynet_link(anynet['path_id'], sdk_vars=sdk_vars,
+                                                            sdk_session=sdk_session)
+
+                if not status:
+                    print("API request to disable Mesh VPN Link {0} failed/timed out. Retrying."\
+                        .format(anynet['path_id']))
+                    rest_call_retry += 1
+                    if rest_call_retry >= MODIFY_RETRY_COUNT:
+                        # Bail out
+                        print("ERROR: Could not disable Mesh VPN Link {0}. Continuing.".format(anynet['path_id']))
+                        status = True
+                        disable_result = False
+                    else:
+                        # wait and keep going.
+                        time.sleep(1)
+            counter += 1
+            pbar.update(counter)
+
+
+        # make sure to clear the bar.
+        pbar.finish()
+        print("\nPrisma SD-WAN Fabric successfully updated the Regional Meshing stance.")
+
+    else:
+        print("Canceling...")
+
+    return do_we_go
+
+
+
+
 def print_selection_overview(anynet_text_list, anynet_label):
 
     statistics = {
@@ -694,5 +871,140 @@ def main_anynet_nomenu_just_do(new_anynets_pub, current_anynets_pub, new_anynets
     else:
         sdk_session.interactive.logout()
         sys.exit()
+
+    return
+
+def regional_anynet_menu(regional_mesh_info_dict, swi_to_wn_dict, id_wan_network_name_dict,
+                         id_sitename_dict, site_id_to_role_dict, sdk_vars, sdk_session):
+    """
+    Main menu for anynet manipulation
+    :param regional_mesh_info_dict: Dict containing detailed info on current/existing anynets
+    :param swi_to_wn_dict: xlation dict for SWI to Wan Network ID
+    :param id_wan_network_name_dict: xlation dict for WAN Network ID to WAN Network Name
+    :param id_sitename_dict: xlation dict for site ID to site Name
+    :param site_id_to_role_dict: site ID to Site Role text.
+    :param sdk_vars: Vars passed in for config/modify
+    :param sdk_session: Authenticated CloudGenix SDK Session.
+    :return: tuple with: action (string or true/false)
+             site_a_action_dict (Site-SWI dict for list A)
+             site_b_action_dict (Site-SWI dict for list B)
+    """
+
+    loop = True
+    while loop:
+        # add line
+        print("")
+        # build action menu
+        action = []
+        insufficient_sites = []
+
+        for domain, domain_dict in regional_mesh_info_dict.items():
+            current_mode = domain_dict.get("current_mode", "Custom")
+            site_count = domain_dict.get("statistics", {}).get("sites_count", "Unknown")
+            pending_mode = domain_dict.get("pending_mode", "Unknown")
+            if site_count in [0, 1, "Unknown"]:
+                # skip this domain, add to insufficient_sites
+                insufficient_sites.append(domain)
+            elif current_mode == pending_mode:
+                line_string = f"{domain} ({site_count} {'site' if site_count == 1 else 'sites'}): Current mode: {current_mode}"
+                action.append((line_string, domain))
+            else:
+                line_string = f"*{domain} ({site_count} {'site' if site_count == 1 else 'sites'}): Pending change to: {pending_mode}"
+                action.append((line_string, domain))
+
+        if insufficient_sites:
+            # some domains have too few sites to mesh. Note them.
+            action.append((f"Apply Changes\n"
+                           f"\n(Note: {len(insufficient_sites)} Regions were below minimum site membership (2) and ignored: "
+                           f"{', '.join(insufficient_sites)})", 'commit'))
+        else:
+            # all domains good - no notes.
+            action.append(("Apply Changes", 'commit'))
+
+        banner = "Select Region to change Meshing Stance:"
+        line_fmt = "{0}: {1}"
+
+        # just pull 2nd value
+        list_name, selected_action = menus.quick_menu(banner, line_fmt, action)
+
+
+        if selected_action == 'commit':
+            do_we_go = apply_regional_mesh(regional_mesh_info_dict, sdk_vars, sdk_session)
+            sys.exit()
+
+        elif selected_action in regional_mesh_info_dict.keys():
+            domain_dict = regional_mesh_info_dict[selected_action]
+            current_mode = domain_dict.get("current_mode", "Custom")
+            site_count = domain_dict.get("statistics", {}).get("sites_count", "Unknown")
+            pending_mode = domain_dict.get("pending_mode", "Unknown")
+            new_anynets_count = domain_dict.get("statistics", {}).get("new_anynets_count", "Unknown")
+            current_anynets_count = domain_dict.get("statistics", {}).get("current_anynets_count", "Unknown")
+
+            print(f"Region {selected_action}:\n"
+                  f"\tSites: {site_count}")
+            if current_mode == pending_mode:
+                  print(f"\tCurrent mode: {current_mode}\n")
+            else:
+                print(f"\tCurrent mode: {current_mode} (pending change to {pending_mode})\n")
+
+            if pending_mode == current_mode:
+                if current_mode not in ["Hub/Spoke", "Full Mesh"]:
+                    action = [
+                        ("Change to Full Mesh", "Full Mesh"),
+                        ("Change to Hub/Spoke", "Hub/Spoke"),
+                        ("Return to previous menu", "return")
+                    ]
+                elif current_mode == "Hub/Spoke":
+                    action = [
+                        ("Change to Full Mesh", "Full Mesh"),
+                        ("Return to previous menu", "return")
+                    ]
+                else:
+                    action = [
+                        ("Change to Hub/Spoke", "Hub/Spoke"),
+                        ("Return to previous menu", "return")
+                    ]
+            else:
+                if current_mode not in ["Hub/Spoke", "Full Mesh"] and pending_mode == "Full Mesh":
+                    action = [
+                        ("Change to Hub/Spoke", "Hub/Spoke"),
+                        ("Revert pending change to Full Mesh", "revert"),
+                        ("Return to previous menu", "return")
+                    ]
+                elif current_mode not in ["Hub/Spoke", "Full Mesh"] and pending_mode == "Hub/Spoke":
+                    action = [
+                        ("Change to Full Mesh", "Full Mesh"),
+                        ("Revert pending change to Hub/Spoke", "revert"),
+                        ("Return to previous menu", "return")
+                    ]
+                elif current_mode == "Hub/Spoke":
+                    # must be pending to Full Mesh
+                    action = [
+                        ("Revert pending change to Full Mesh", "revert"),
+                        ("Return to previous menu", "return")
+                    ]
+                else:
+                    # must be pending to Hub/Spoke
+                    action = [
+                        ("Revert pending change to Hub/Spoke", "revert"),
+                        ("Return to previous menu", "return")
+                    ]
+
+            banner = "Select an action for this region:"
+            line_fmt = "{0}: {1}"
+
+            # just pull 2nd value
+            list_name, sub_selected_action = menus.quick_menu(banner, line_fmt, action)
+
+            if sub_selected_action == "Hub/Spoke":
+                domain_dict["pending_mode"] = "Hub/Spoke"
+            elif sub_selected_action == "Full Mesh":
+                domain_dict["pending_mode"] = "Full Mesh"
+            elif sub_selected_action == "revert":
+                domain_dict["pending_mode"] = domain_dict["current_mode"]
+
+        else:
+            sdk_session.interactive.logout()
+            sys.exit()
 
     return
